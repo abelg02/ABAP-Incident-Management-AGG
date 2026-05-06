@@ -11,7 +11,7 @@
     <DDTEXT>Draft Table - Incident History</DDTEXT>
     <MASTERLANG>E</MASTERLANG>
     <CONTFLAG>A</CONTFLAG>
-    <EXCLASS>1</EXCLASS>
+    <EXCLASS>4</EXCLASS>
    </DD02V>
    <DD09L>
     <TABNAME>ZDT_D_INCT_H_AGG</TABNAME>
@@ -110,6 +110,7 @@
      <MASK>      S</MASK>
      <DDTEXT>Standard Include for Draft Administration (BDL Syntax Check)</DDTEXT>
      <COMPTYPE>S</COMPTYPE>
+     <GROUPNAME>%ADMIN</GROUPNAME>
     </DD03P>
    </DD03P_TABLE>
    <TABL_EXTRAS>

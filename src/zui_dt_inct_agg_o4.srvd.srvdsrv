@@ -1,0 +1,7 @@
+@EndUserText.label: 'Service Definition - Incident Management'
+define service ZUI_DT_INCT_AGG_O4 {
+  expose zc_dt_inct_agg      as Incident;
+  expose zc_dt_inct_h_agg    as History;
+  expose zdd_status_vh_agg   as Status;
+  expose zdd_priority_vh_agg as Priority;
+}
