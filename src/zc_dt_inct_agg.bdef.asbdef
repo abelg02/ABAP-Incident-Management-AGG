@@ -1,0 +1,28 @@
+projection;
+strict ( 2 );
+use draft;
+
+define behavior for zc_dt_inct_agg alias Incident
+{
+  use create;
+  use update;
+  use delete;
+
+  use action changeStatus;
+
+  use action Activate;
+  use action Discard;
+  use action Edit;
+  use action Resume;
+  use action Prepare;
+
+  use association _History { create; with draft; }
+}
+
+define behavior for zc_dt_inct_h_agg alias History
+{
+  use update;
+  use delete;
+
+  use association _Incident { with draft; }
+}
