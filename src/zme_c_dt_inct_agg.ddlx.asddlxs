@@ -10,7 +10,7 @@
     visualizations: [{ type: #AS_LINEITEM }]
   }]
 }
-annotate view zc_dt_inct_agg with
+annotate entity zc_dt_inct_agg with
 {
   @UI.facet: [
     { id:            'Incident',

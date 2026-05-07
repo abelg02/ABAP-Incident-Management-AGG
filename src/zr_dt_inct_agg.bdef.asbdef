@@ -83,7 +83,6 @@ define behavior for zdd_inct_h_agg alias History
   draft table zdt_d_inct_h_agg
   lock dependent by _Incident
   authorization dependent by _Incident
-  etag master LocalLastChangedAt
 {
   update;
   delete;
