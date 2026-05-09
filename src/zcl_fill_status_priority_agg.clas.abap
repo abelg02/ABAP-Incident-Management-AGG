@@ -1,3 +1,6 @@
+* Clase utilitaria para cargar los datos maestros de estados y prioridades.
+* Se ejecuta como consola (if_oo_adt_classrun) directamente desde ADT con F9.
+* Hay que ejecutarla una sola vez tras activar las tablas ZDT_STATUS_AGG y ZDT_PRIORITY_AGG.
 CLASS zcl_fill_status_priority_agg DEFINITION
   PUBLIC
   FINAL
@@ -12,11 +15,11 @@ ENDCLASS.
 CLASS zcl_fill_status_priority_agg IMPLEMENTATION.
 
   METHOD if_oo_adt_classrun~main.
-    " Clear existing data
+    " Limpiamos los datos existentes para evitar duplicados en cada ejecución
     DELETE FROM zdt_status_agg.
     DELETE FROM zdt_priority_agg.
 
-    " Insert Status values
+    " Insertamos los 6 estados válidos del sistema
     INSERT zdt_status_agg FROM TABLE @( VALUE #(
       ( status_code = 'OP'  status_description = 'Open' )
       ( status_code = 'IP'  status_description = 'In Progress' )
@@ -29,7 +32,7 @@ CLASS zcl_fill_status_priority_agg IMPLEMENTATION.
       out->write( |{ sy-dbcnt } Status records were added successfully| ).
     ENDIF.
 
-    " Insert Priority values
+    " Insertamos las 3 prioridades válidas del sistema
     INSERT zdt_priority_agg FROM TABLE @( VALUE #(
       ( priority_code = 'H'  priority_description = 'High' )
       ( priority_code = 'M'  priority_description = 'Medium' )
@@ -41,3 +44,4 @@ CLASS zcl_fill_status_priority_agg IMPLEMENTATION.
   ENDMETHOD.
 
 ENDCLASS.
+

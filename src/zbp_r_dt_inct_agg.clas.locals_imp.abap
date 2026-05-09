@@ -1,3 +1,6 @@
+* Implementación local del handler RAP para la entidad Incident.
+* Contiene toda la lógica de negocio: autorizaciones, features, determinaciones,
+* la acción changeStatus y las tres validaciones de guardado.
 CLASS lhc_incident DEFINITION INHERITING FROM cl_abap_behavior_handler.
   PRIVATE SECTION.
     METHODS:
@@ -28,6 +31,8 @@ ENDCLASS.
 
 CLASS lhc_incident IMPLEMENTATION.
 
+  " Autorización global: permite crear, actualizar y eliminar a todos los usuarios del sistema.
+  " El control más específico (quién puede cambiar estado) se gestiona dentro de changeStatus.
   METHOD get_global_authorizations.
     IF requested_authorizations-%create = if_abap_behv=>mk-on.
       result-%create = if_abap_behv=>auth-allowed.
@@ -40,6 +45,7 @@ CLASS lhc_incident IMPLEMENTATION.
     ENDIF.
   ENDMETHOD.
 
+  " Autorización por instancia: permite update y delete en cada registro concreto.
   METHOD get_instance_authorizations.
     LOOP AT keys INTO DATA(key).
       APPEND CORRESPONDING #( key ) TO result ASSIGNING FIELD-SYMBOL(<result>).
@@ -52,6 +58,10 @@ CLASS lhc_incident IMPLEMENTATION.
     ENDLOOP.
   ENDMETHOD.
 
+  " Control del botón 'Change Status': decide si está habilitado o deshabilitado para cada incidente.
+  " Se deshabilita en dos casos:
+  "   1. El incidente ya está cerrado (CO, CL o CN): no tiene sentido seguir cambiando el estado.
+  "   2. El incidente es nuevo (borrador sin registro activo): aún no se ha guardado.
   METHOD get_instance_features.
     READ ENTITIES OF zr_dt_inct_agg IN LOCAL MODE
       ENTITY Incident
@@ -60,11 +70,14 @@ CLASS lhc_incident IMPLEMENTATION.
       RESULT DATA(incidents)
       FAILED DATA(read_failed).
 
+    " Extraemos las claves de los registros que están en modo borrador
     DATA lt_draft_keys TYPE TABLE OF zdt_inct_agg.
     lt_draft_keys = VALUE #( FOR inc IN incidents
                               WHERE ( %is_draft = if_abap_behv=>mk-on )
                               ( inc_uuid = inc-IncUUID ) ).
 
+    " Consultamos la tabla activa para saber cuáles borradores ya tienen registro persistido.
+    " Si el UUID del borrador no existe en la tabla activa, es una creación nueva.
     DATA lt_active TYPE TABLE OF zdt_inct_agg.
     IF lt_draft_keys IS NOT INITIAL.
       SELECT inc_uuid
@@ -87,6 +100,10 @@ CLASS lhc_incident IMPLEMENTATION.
                                        ELSE if_abap_behv=>fc-o-enabled ) ) ).
   ENDMETHOD.
 
+  " Determinación on modify (create): rellena automáticamente los campos al abrir el formulario.
+  " - IncidentID: siguiente número disponible (MAX actual + 1)
+  " - Status: 'OP' (Open) como estado inicial
+  " - CreationDate y ChangedDate: fecha actual del sistema
   METHOD setDefaultValues.
     READ ENTITIES OF zr_dt_inct_agg IN LOCAL MODE
       ENTITY Incident
@@ -109,6 +126,8 @@ CLASS lhc_incident IMPLEMENTATION.
       FAILED DATA(lt_failed).
   ENDMETHOD.
 
+  " Determinación on save (create): llama a la acción interna setHistory para crear
+  " el primer registro en el historial al guardar el incidente por primera vez.
   METHOD setDefaultHistory.
     MODIFY ENTITIES OF zr_dt_inct_agg IN LOCAL MODE
       ENTITY Incident
@@ -119,6 +138,8 @@ CLASS lhc_incident IMPLEMENTATION.
       REPORTED DATA(lc_reported).
   ENDMETHOD.
 
+  " Acción interna: crea el primer registro de historial para cada incidente nuevo.
+  " Valores fijos: HisID=1, PreviousStatus vacío, NewStatus=estado actual (OP), Text='First Incident'.
   METHOD setHistory.
     READ ENTITIES OF zr_dt_inct_agg IN LOCAL MODE
       ENTITY Incident
@@ -142,47 +163,39 @@ CLASS lhc_incident IMPLEMENTATION.
       REPORTED DATA(lc_reported).
   ENDMETHOD.
 
+  " Acción changeStatus: gestiona el cambio de estado del incidente.
+  " Para cada incidente aplica tres validaciones de negocio con CONTINUE si falla alguna,
+  " y si todas pasan: actualiza el estado, calcula el siguiente HisID y crea el registro de historial.
   METHOD changeStatus.
     READ ENTITIES OF zr_dt_inct_agg IN LOCAL MODE
       ENTITY Incident
-        FIELDS ( IncUUID Status ResponsibleUser )
+        FIELDS ( IncUUID Status ResponsibleUser LocalCreatedBy )
         WITH CORRESPONDING #( keys )
       RESULT DATA(incidents)
       FAILED DATA(read_failed).
 
     INSERT LINES OF read_failed-incident INTO TABLE failed-incident.
 
+    " Obtenemos el usuario técnico que está ejecutando la acción
     DATA(lv_current_user) = cl_abap_context_info=>get_user_technical_name( ).
 
     LOOP AT incidents INTO DATA(incident).
       DATA(key_entry) = VALUE #( keys[ %tky = incident-%tky ] OPTIONAL ).
 
-      " Only the responsible user or an admin (creator) can change the status
-      IF incident-ResponsibleUser IS NOT INITIAL
-        AND incident-ResponsibleUser <> lv_current_user.
+      " Validación 1 — Autorización: solo el responsable o el creador (administrador) pueden cambiar el estado
+      IF lv_current_user <> incident-LocalCreatedBy
+        AND ( incident-ResponsibleUser IS INITIAL OR lv_current_user <> incident-ResponsibleUser ).
         APPEND VALUE #( %tky = incident-%tky ) TO failed-incident.
         APPEND VALUE #( %tky        = incident-%tky
-                        %state_area = 'VALIDATE_RESPONSIBLE'
+                        %state_area = 'VALIDATE_AUTH_CHANGE'
                         %msg        = new_message_with_text(
                                         severity = if_abap_behv_message=>severity-error
-                                        text     = 'Only the responsible user or an administrator can change the status' ) )
+                                        text     = 'Only the responsible user or administrator can change the status' ) )
           TO reported-incident.
         CONTINUE.
       ENDIF.
 
-      " Transitioning to In Progress (IP) requires a responsible user assigned
-      IF key_entry-%param-Status = 'IP' AND incident-ResponsibleUser IS INITIAL.
-        APPEND VALUE #( %tky = incident-%tky ) TO failed-incident.
-        APPEND VALUE #( %tky        = incident-%tky
-                        %state_area = 'VALIDATE_RESPONSIBLE'
-                        %msg        = new_message_with_text(
-                                        severity = if_abap_behv_message=>severity-error
-                                        text     = 'A responsible user must be assigned before setting status to In Progress' ) )
-          TO reported-incident.
-        CONTINUE.
-      ENDIF.
-
-      " Block transition from Pending (PE) to Completed (CO) or Closed (CL)
+      " Validación 2 — Regla de negocio: no se puede pasar de Pending (PE) a Completed (CO) o Closed (CL)
       IF incident-Status = 'PE'
         AND ( key_entry-%param-Status = 'CO' OR key_entry-%param-Status = 'CL' ).
         APPEND VALUE #( %tky = incident-%tky ) TO failed-incident.
@@ -195,6 +208,20 @@ CLASS lhc_incident IMPLEMENTATION.
         CONTINUE.
       ENDIF.
 
+      " Validación 3 — Para pasar a In Progress (IP) es obligatorio tener un responsable asignado
+      IF key_entry-%param-Status = 'IP' AND incident-ResponsibleUser IS INITIAL.
+        APPEND VALUE #( %tky = incident-%tky ) TO failed-incident.
+        APPEND VALUE #( %tky                      = incident-%tky
+                        %state_area               = 'VALIDATE_RESPONSIBLE'
+                        %msg                      = new_message_with_text(
+                                                      severity = if_abap_behv_message=>severity-error
+                                                      text     = 'A responsible user must be assigned before setting status to In Progress' )
+                        %element-ResponsibleUser  = if_abap_behv=>mk-on )
+          TO reported-incident.
+        CONTINUE.
+      ENDIF.
+
+      " Si pasó todas las validaciones: actualizamos el estado y la fecha de cambio
       MODIFY ENTITIES OF zr_dt_inct_agg IN LOCAL MODE
         ENTITY Incident
           UPDATE FIELDS ( Status ChangedDate )
@@ -204,6 +231,7 @@ CLASS lhc_incident IMPLEMENTATION.
         FAILED DATA(update_failed)
         REPORTED DATA(update_reported).
 
+      " Leemos el historial actual para calcular el siguiente número de registro
       READ ENTITIES OF zr_dt_inct_agg IN LOCAL MODE
         ENTITY Incident BY \_History
           ALL FIELDS
@@ -213,6 +241,7 @@ CLASS lhc_incident IMPLEMENTATION.
 
       DATA(next_his_id) = lines( histories ) + 1.
 
+      " Creamos el nuevo registro de historial con el estado anterior, el nuevo y la observación del usuario
       MODIFY ENTITIES OF zr_dt_inct_agg IN LOCAL MODE
         ENTITY Incident
           CREATE BY \_History
@@ -228,6 +257,7 @@ CLASS lhc_incident IMPLEMENTATION.
         REPORTED DATA(reported_hist).
     ENDLOOP.
 
+    " Devolvemos el incidente actualizado como resultado de la acción (refresca la pantalla)
     READ ENTITIES OF zr_dt_inct_agg IN LOCAL MODE
       ENTITY Incident
         ALL FIELDS
@@ -239,6 +269,8 @@ CLASS lhc_incident IMPLEMENTATION.
                         %param = CORRESPONDING #( r ) ) ).
   ENDMETHOD.
 
+  " Validación on save (create + update): comprueba que los 5 campos obligatorios estén informados.
+  " Para cada campo vacío, marca el campo en rojo en la UI (%element-<campo> = mk-on).
   METHOD validateMandatoryFields.
     READ ENTITIES OF zr_dt_inct_agg IN LOCAL MODE
       ENTITY Incident
@@ -304,6 +336,9 @@ CLASS lhc_incident IMPLEMENTATION.
     ENDLOOP.
   ENDMETHOD.
 
+  " Validación on save (cuando cambian CreationDate o ChangedDate): dos reglas de negocio:
+  "   1. La fecha de creación no puede ser futura.
+  "   2. La fecha de modificación no puede ser anterior a la de creación.
   METHOD validateDates.
     READ ENTITIES OF zr_dt_inct_agg IN LOCAL MODE
       ENTITY Incident
@@ -317,12 +352,12 @@ CLASS lhc_incident IMPLEMENTATION.
       IF incident-CreationDate IS NOT INITIAL
         AND incident-CreationDate > lv_today.
         APPEND VALUE #( %tky = incident-%tky ) TO failed-Incident.
-        APPEND VALUE #( %tky                  = incident-%tky
-                        %state_area           = 'VALIDATE_DATES'
-                        %msg                  = new_message_with_text(
-                                                  severity = if_abap_behv_message=>severity-error
-                                                  text     = 'Creation date cannot be a future date' )
-                        %element-CreationDate = if_abap_behv=>mk-on )
+        APPEND VALUE #( %tky                   = incident-%tky
+                        %state_area            = 'VALIDATE_DATES'
+                        %msg                   = new_message_with_text(
+                                                   severity = if_abap_behv_message=>severity-error
+                                                   text     = 'Creation date cannot be a future date' )
+                        %element-CreationDate  = if_abap_behv=>mk-on )
           TO reported-Incident.
       ENDIF.
 
@@ -341,6 +376,8 @@ CLASS lhc_incident IMPLEMENTATION.
     ENDLOOP.
   ENDMETHOD.
 
+  " Validación on save (delete): solo se pueden eliminar incidentes con estado 'OP' (Open).
+  " Cualquier otro estado indica que el incidente ya está en proceso o finalizado.
   METHOD validateDeleteStatus.
     READ ENTITIES OF zr_dt_inct_agg IN LOCAL MODE
       ENTITY Incident

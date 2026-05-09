@@ -1,10 +1,15 @@
+// Metadata Extension para la entidad de consumo de incidentes (ZC_DT_INCT_AGG).
+// Define cómo Fiori Elements presenta los datos: cabecera, ordenación, columnas,
+// filtros de búsqueda, secciones del Object Page y el botón de acción.
 @Metadata.layer: #CORE
 @UI: {
+  // Cabecera del List Report y del Object Page
   headerInfo: {
     typeName:       'Incident',
     typeNamePlural: 'Incidents',
     title: { type: #STANDARD, label: 'Incidents', value: 'IncidentID' }
   },
+  // Ordenación por defecto: ascendente por IncidentID
   presentationVariant: [{
     sortOrder:      [{ by: 'IncidentID', direction: #ASC }],
     visualizations: [{ type: #AS_LINEITEM }]
@@ -12,6 +17,9 @@
 }
 annotate entity zc_dt_inct_agg with
 {
+  // Secciones (facets) del Object Page:
+  // - 'Incident': formulario con los datos del incidente (#IDENTIFICATION_REFERENCE)
+  // - 'History':  tabla con el historial de cambios de estado (#LINEITEM_REFERENCE)
   @UI.facet: [
     { id:            'Incident',
       purpose:       #STANDARD,
@@ -25,6 +33,9 @@ annotate entity zc_dt_inct_agg with
       position:      20,
       targetElement: '_History' }
   ]
+  // IncUUID se oculta visualmente (@UI.hidden), pero su definición aquí
+  // es necesaria para anclar el botón de acción 'changeStatus' en la barra de herramientas.
+  // El botón aparece tanto en la lista como en el detalle del incidente.
   @UI.hidden: true
   @UI: {
     lineItem: [
@@ -39,6 +50,7 @@ annotate entity zc_dt_inct_agg with
   }
   IncUUID;
 
+  // ID semántico del incidente — visible en lista y detalle, disponible como filtro
   @UI: {
     lineItem:       [{ position: 20, importance: #MEDIUM }],
     identification: [{ position: 20 }],
@@ -46,6 +58,7 @@ annotate entity zc_dt_inct_agg with
   }
   IncidentID;
 
+  // Título — visible en lista y detalle, pero NO como filtro de búsqueda (sin selectionField)
   @UI: {
     lineItem:       [{ position: 30, importance: #LOW }],
     identification: [{ position: 30 }]
@@ -59,6 +72,7 @@ annotate entity zc_dt_inct_agg with
   }
   Description;
 
+  // Estado: value help vinculado a ZDD_STATUS_VH_AGG con validación (solo valores permitidos)
   @Consumption.valueHelpDefinition: [{
     entity.name:    'zdd_status_vh_agg',
     entity.element: 'StatusCode',
@@ -71,6 +85,7 @@ annotate entity zc_dt_inct_agg with
   }
   Status;
 
+  // Prioridad: value help vinculado a ZDD_PRIORITY_VH_AGG con validación
   @Consumption.valueHelpDefinition: [{
     entity.name:    'zdd_priority_vh_agg',
     entity.element: 'PriorityCode',
@@ -104,6 +119,7 @@ annotate entity zc_dt_inct_agg with
   }
   ResponsibleUser;
 
+  // Campos de auditoría: ocultos en columnas y filtros (@UI.hidden: true)
   @UI.hidden: true
   @UI: {
     lineItem:       [{ position: 90,  importance: #LOW }],
@@ -144,6 +160,7 @@ annotate entity zc_dt_inct_agg with
   }
   LastChangedAt;
 
+  // Asociación al historial: oculta en la UI (se muestra como facet, no como campo suelto)
   @UI.hidden: true
   _History;
 }

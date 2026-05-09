@@ -1,64 +1,87 @@
+// Behavior Definition raíz: ZR_DT_INCT_AGG
+// Escenario managed: el framework RAP gestiona automáticamente INSERT/UPDATE/DELETE.
+// Clase de implementación: ZBP_R_DT_INCT_AGG (handler local: lhc_incident).
 managed implementation in class zbp_r_dt_inct_agg unique;
 strict ( 2 );
-with draft;
+with draft; // Draft habilitado: el usuario trabaja en borrador antes de guardar definitivamente
 
+// ─── ENTIDAD INCIDENTE ───────────────────────────────────────────────────────
 define behavior for zr_dt_inct_agg alias Incident
-  persistent table zdt_inct_agg
-  draft table zdt_d_inct_agg
-  lock master
-  total etag LastChangedAt
-  etag master LocalLastChangedAt
-  authorization master ( global, instance )
+  persistent table zdt_inct_agg       // Tabla de registros activos (persistidos)
+  draft table     zdt_d_inct_agg      // Tabla de borradores (cambios no guardados)
+  lock master                         // Esta entidad es dueña del bloqueo; los hijos lo heredan
+  total etag LastChangedAt            // Detecta modificaciones concurrentes a nivel de BO
+  etag master LocalLastChangedAt      // ETag por instancia para el optimistic locking
+  authorization master ( global, instance ) // Autorización comprobada globalmente y por instancia
 {
-  create;
-  update;
-  delete;
+  create; // Permite crear nuevos incidentes
+  update; // Permite actualizar incidentes existentes
+  delete; // Permite eliminar incidentes (restringido a estado OP por validateDeleteStatus)
 
+  // Composición con el historial: la creación de hijos está controlada por features de instancia
   association _History { create ( features : instance ); with draft; }
 
+  // Campos de solo lectura: el usuario no puede editarlos directamente desde la interfaz
   field ( readonly )
-    IncUUID,
-    IncidentID,
-    Status,
-    ChangedDate,
+    IncUUID,            // UUID generado automáticamente por RAP (numbering: managed)
+    IncidentID,         // ID incremental asignado por la determinación setDefaultValues
+    Status,             // Estado gestionado por setDefaultValues y la acción changeStatus
+    ChangedDate,        // Fecha actualizada automáticamente en cada cambio de estado
     LocalCreatedBy,
     LocalCreatedAt,
     LocalLastChangedBy,
     LocalLastChangedAt,
-    LastChangedAt;
+    LastChangedAt;      // Marca de tiempo global (ETag)
 
+  // IncUUID lo genera el framework automáticamente en cada creación
   field ( numbering : managed )
     IncUUID;
 
+  // Estos tres campos deben rellenarlos el usuario antes de guardar
   field ( mandatory )
     Title,
     Description,
     Priority;
 
+  // Acción personalizada: abre un pop-up (nuevo estado + texto de observación) para cambiar el estado.
+  // features: instance => el botón se habilita/deshabilita por registro en get_instance_features.
+  // result [1] $self => tras ejecutar la acción, Fiori refresca el propio incidente.
   action ( features : instance ) changeStatus
     parameter zdd_change_status_param_agg result [1] $self;
 
+  // Tras changeStatus, Fiori refresca todos los campos del incidente (incluida la sección de historial)
   side effects { action changeStatus affects $self; }
 
+  // Acción interna: solo puede llamarse desde código ABAP, nunca desde la UI
   internal action setHistory;
 
+  // Al guardar un incidente nuevo: genera el primer registro de historial (estado OP, texto 'First Incident')
   determination setDefaultHistory on save   { create; }
+
+  // Al abrir el formulario de creación: rellena automáticamente IncidentID, Status (OP) y las fechas
   determination setDefaultValues  on modify { create; }
 
+  // Valida que Title, Description, Priority, Status y CreationDate no estén vacíos
   validation validateMandatoryFields on save { create; update; }
+
+  // Valida que CreationDate no sea futura y que ChangedDate >= CreationDate
   validation validateDates           on save { field CreationDate, ChangedDate; }
+
+  // Valida que solo se pueden eliminar incidentes con estado OP
   validation validateDeleteStatus    on save { delete; }
 
-  draft action Activate optimized;
-  draft action Discard;
-  draft action Edit;
-  draft action Resume;
-  draft determine action Prepare
+  // Acciones del ciclo de vida del borrador
+  draft action Activate optimized; // Persiste el borrador como registro activo (optimized: solo campos modificados)
+  draft action Discard;            // Descarta todos los cambios del borrador
+  draft action Edit;               // Pone un registro activo en modo edición (crea un nuevo borrador)
+  draft action Resume;             // Retoma un borrador ya existente
+  draft determine action Prepare   // Comprobación previa al Activate: ejecuta las validaciones
   {
     validation validateMandatoryFields;
     validation validateDates;
   }
 
+  // Mapeo de campos: alias CDS → nombre de columna en la tabla de base de datos
   mapping for zdt_inct_agg
   {
     IncUUID            = inc_uuid;
@@ -78,30 +101,38 @@ define behavior for zr_dt_inct_agg alias Incident
   }
 }
 
+// ─── ENTIDAD HISTORIAL ───────────────────────────────────────────────────────
+// Entidad hija: el bloqueo y la autorización los delega al incidente padre.
+// Los registros de historial se crean programáticamente (en creación via setHistory,
+// en cambios de estado via changeStatus). Nunca se crean manualmente desde la UI.
 define behavior for zdd_inct_h_agg alias History
   implementation in class zbp_dd_inct_h_agg unique
   persistent table zdt_inct_h_agg
-  draft table zdt_d_inct_h_agg
-  lock dependent by _Incident
-  authorization dependent by _Incident
+  draft table     zdt_d_inct_h_agg
+  lock dependent by _Incident         // El bloqueo lo gestiona el incidente padre
+  authorization dependent by _Incident // La autorización se resuelve desde el padre
 {
-  update;
-  delete;
+  update; // Los registros de historial se pueden actualizar
+  delete; // Los registros de historial se pueden eliminar
 
+  // Navegación de vuelta al incidente padre (con soporte draft para consistencia)
   association _Incident { with draft; }
 
+  // HisUUID lo genera automáticamente el framework
   field ( numbering : managed )
     HisUUID;
 
+  // Campos de solo lectura: gestionados por RAP o asignados programáticamente
   field ( readonly )
     HisUUID,
-    IncUUID,
+    IncUUID,            // Clave foránea al incidente padre, nunca se cambia manualmente
     LocalCreatedBy,
     LocalCreatedAt,
     LocalLastChangedBy,
     LocalLastChangedAt,
     LastChangedAt;
 
+  // Mapeo de campos: alias CDS → nombre de columna en la tabla de base de datos
   mapping for zdt_inct_h_agg
   {
     HisUUID            = his_uuid;

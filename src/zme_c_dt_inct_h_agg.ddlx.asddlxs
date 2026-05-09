@@ -1,11 +1,15 @@
+// Metadata Extension para la entidad de consumo de historial (ZC_DT_INCT_H_AGG).
+// El historial es de solo lectura desde la UI: los registros los crea
+// automáticamente el sistema (al crear un incidente o al cambiar su estado).
 @Metadata.layer: #CORE
 @UI: {
-  createHidden: true,
+  createHidden: true, // Oculta el botón 'Crear' — el historial solo se genera programáticamente
   headerInfo: {
     typeName:       'History',
     typeNamePlural: 'Histories',
     title: { type: #STANDARD, label: 'History', value: 'HisID' }
   },
+  // Ordenación por defecto: ascendente por HisID (cronológico)
   presentationVariant: [{
     sortOrder:      [{ by: 'HisID', direction: #ASC }],
     visualizations: [{ type: #AS_LINEITEM }]
@@ -13,6 +17,9 @@
 }
 annotate entity zc_dt_inct_h_agg with
 {
+  // Sección del Object Page del historial: tabla con todos los registros (#LINEITEM_REFERENCE)
+  // Se usa LINEITEM_REFERENCE (no IDENTIFICATION_REFERENCE) porque el historial
+  // es una lista de múltiples filas, no un formulario de un único registro.
   @UI.facet: [{
     id:       'History',
     purpose:  #STANDARD,
@@ -20,6 +27,8 @@ annotate entity zc_dt_inct_h_agg with
     label:    'Incident History',
     position: 10
   }]
+
+  // UUIDs ocultos — son claves técnicas que no aportan valor visual al usuario
   @UI.hidden: true
   @UI: {
     lineItem:       [{ position: 10, importance: #HIGH }],
@@ -34,6 +43,7 @@ annotate entity zc_dt_inct_h_agg with
   }
   IncUUID;
 
+  // Número secuencial del registro — importancia MEDIUM (es un ID)
   @UI: {
     lineItem:       [{ position: 30, importance: #MEDIUM }],
     identification: [{ position: 30 }]
@@ -52,12 +62,15 @@ annotate entity zc_dt_inct_h_agg with
   }
   NewStatus;
 
+  // Observación introducida por el usuario al cambiar el estado
   @UI: {
     lineItem:       [{ position: 60, importance: #LOW }],
     identification: [{ position: 60 }]
   }
   Text;
 
+  // Campos de auditoría: ocultos — el usuario que hizo el cambio y la fecha
+  // quedan registrados en LocalCreatedBy/LocalCreatedAt automáticamente por RAP
   @UI.hidden: true
   LocalCreatedBy;
 
@@ -73,6 +86,7 @@ annotate entity zc_dt_inct_h_agg with
   @UI.hidden: true
   LastChangedAt;
 
+  // Asociación al padre: oculta en la UI
   @UI.hidden: true
   _Incident;
 }
