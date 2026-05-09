@@ -16,7 +16,7 @@ annotate entity zc_dt_inct_h_agg with
   @UI.facet: [{
     id:       'History',
     purpose:  #STANDARD,
-    type:     #IDENTIFICATION_REFERENCE,
+    type:     #LINEITEM_REFERENCE,
     label:    'Incident History',
     position: 10
   }]

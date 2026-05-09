@@ -69,6 +69,7 @@ define behavior for zr_dt_inct_agg alias Incident
     Priority           = priority;
     CreationDate       = creation_date;
     ChangedDate        = changed_date;
+    ResponsibleUser    = responsible_user;
     LocalCreatedBy     = local_created_by;
     LocalCreatedAt     = local_created_at;
     LocalLastChangedBy = local_last_changed_by;

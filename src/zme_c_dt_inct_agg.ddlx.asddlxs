@@ -97,6 +97,13 @@ annotate entity zc_dt_inct_agg with
   }
   ChangedDate;
 
+  @UI: {
+    lineItem:       [{ position: 85, importance: #LOW }],
+    identification: [{ position: 85 }],
+    selectionField: [{ position: 85 }]
+  }
+  ResponsibleUser;
+
   @UI.hidden: true
   @UI: {
     lineItem:       [{ position: 90,  importance: #LOW }],

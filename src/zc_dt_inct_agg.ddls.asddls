@@ -13,6 +13,7 @@ define root view entity zc_dt_inct_agg
       Priority,
       CreationDate,
       ChangedDate,
+      ResponsibleUser,
       LocalCreatedBy,
       LocalCreatedAt,
       LocalLastChangedBy,

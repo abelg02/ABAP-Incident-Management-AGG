@@ -13,6 +13,7 @@ define root view entity zr_dt_inct_agg
       priority              as Priority,
       creation_date         as CreationDate,
       changed_date          as ChangedDate,
+      responsible_user      as ResponsibleUser,
       @Semantics.user.createdBy: true
       local_created_by      as LocalCreatedBy,
       @Semantics.systemDateTime.createdAt: true
